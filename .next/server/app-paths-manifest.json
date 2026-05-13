@@ -3,5 +3,7 @@
   "/leagues/page": "app/leagues/page.js",
   "/leagues/[id]/page": "app/leagues/[id]/page.js",
   "/leagues/[id]/standings/page": "app/leagues/[id]/standings/page.js",
-  "/players/page": "app/players/page.js"
+  "/players/page": "app/players/page.js",
+  "/leagues/[id]/rounds/page": "app/leagues/[id]/rounds/page.js",
+  "/leagues/[id]/rounds/[roundId]/page": "app/leagues/[id]/rounds/[roundId]/page.js"
 }

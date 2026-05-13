@@ -30,6 +30,16 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/players/page.js"
+    ],
+    "/leagues/[id]/rounds/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/leagues/[id]/rounds/page.js"
+    ],
+    "/leagues/[id]/rounds/[roundId]/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/leagues/[id]/rounds/[roundId]/page.js"
     ]
   }
 }
