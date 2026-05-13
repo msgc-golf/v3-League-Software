@@ -1,0 +1,98 @@
+{
+  "entities": {
+    "League": {
+      "title": "League",
+      "description": "A golf league",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "format": { "enum": ["stroke_play", "best_ball"] }
+      },
+      "required": ["name", "format"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "A 9 hole golf course",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "pars": { "type": "array", "items": { "type": "number" } },
+        "handicaps": { "type": "array", "items": { "type": "number" } }
+      },
+      "required": ["name", "pars", "handicaps"]
+    },
+    "Player": {
+      "title": "Player",
+      "description": "A golfer",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Entry": {
+      "title": "Entry",
+      "description": "An entry for a golf league (1 or 2 players)",
+      "type": "object",
+      "properties": {
+        "leagueId": { "type": "string" },
+        "name": { "type": "string" },
+        "playerIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["leagueId", "name", "playerIds"]
+    },
+    "Round": {
+      "title": "Round",
+      "description": "A scheduled round",
+      "type": "object",
+      "properties": {
+        "leagueId": { "type": "string" },
+        "date": { "type": "string" },
+        "courseId": { "type": "string" }
+      },
+      "required": ["leagueId", "date", "courseId"]
+    },
+    "Score": {
+      "title": "Score",
+      "description": "A player score for a round",
+      "type": "object",
+      "properties": {
+        "roundId": { "type": "string" },
+        "leagueId": { "type": "string" },
+        "playerId": { "type": "string" },
+        "roundDate": { "type": "string" },
+        "courseId": { "type": "string" },
+        "coursePar": { "type": "number" },
+        "holeScores": { "type": "array", "items": { "type": "number" } },
+        "calculatedHandicap": { "type": "number" }
+      },
+      "required": ["roundId", "leagueId", "playerId", "roundDate", "courseId", "coursePar", "holeScores", "calculatedHandicap"]
+    }
+  },
+  "firestore": {
+    "leagues": {
+      "schema": { "$ref": "#/entities/League" },
+      "description": "Golf leagues"
+    },
+    "courses": {
+      "schema": { "$ref": "#/entities/Course" },
+      "description": "Golf courses"
+    },
+    "players": {
+      "schema": { "$ref": "#/entities/Player" },
+      "description": "Golfers"
+    },
+    "entries": {
+      "schema": { "$ref": "#/entities/Entry" },
+      "description": "Entries into leagues"
+    },
+    "rounds": {
+      "schema": { "$ref": "#/entities/Round" },
+      "description": "Scheduled dates"
+    },
+    "scores": {
+      "schema": { "$ref": "#/entities/Score" },
+      "description": "Entered scores"
+    }
+  }
+}

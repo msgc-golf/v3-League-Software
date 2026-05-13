@@ -1,0 +1,134 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() 
+        && request.auth.token.email == 'masonbslusher@gmail.com' 
+        && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidLeague(data) {
+      return data.keys().hasAll(['name', 'format']) 
+        && data.keys().size() == 2
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.format in ['stroke_play', 'best_ball'];
+    }
+
+    function isValidCourse(data) {
+      return data.keys().hasAll(['name', 'pars', 'handicaps'])
+        && data.keys().size() == 3
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.pars is list && data.pars.size() == 9
+        && data.handicaps is list && data.handicaps.size() == 9;
+    }
+
+    function isValidPlayer(data) {
+      return data.keys().hasAll(['name'])
+        && data.keys().size() == 1
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100;
+    }
+
+    function isValidEntry(data) {
+      return data.keys().hasAll(['leagueId', 'name', 'playerIds'])
+        && data.keys().size() == 3
+        && isValidId(data.leagueId)
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.playerIds is list && data.playerIds.size() >= 1 && data.playerIds.size() <= 2;
+    }
+
+    function isValidRound(data) {
+      return data.keys().hasAll(['leagueId', 'date', 'courseId'])
+        && data.keys().size() == 3
+        && isValidId(data.leagueId) && isValidId(data.courseId)
+        && data.date is string && data.date.size() > 0 && data.date.size() <= 20;
+    }
+
+    function isValidScore(data) {
+      return data.keys().hasAll(['roundId', 'leagueId', 'playerId', 'roundDate', 'courseId', 'coursePar', 'holeScores', 'calculatedHandicap'])
+        && data.keys().size() == 8
+        && isValidId(data.roundId) && isValidId(data.leagueId) && isValidId(data.playerId) && isValidId(data.courseId)
+        && data.roundDate is string && data.coursePar is number
+        && data.holeScores is list && data.holeScores.size() == 9
+        && data.calculatedHandicap is number;
+    }
+
+    // --- Match Rules ---
+
+    match /leagues/{leagueId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidLeague(incoming());
+      allow update: if isAdmin() && isValidLeague(incoming()) 
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'format']);
+      allow delete: if isAdmin();
+    }
+
+    match /courses/{courseId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidCourse(incoming());
+      allow update: if isAdmin() && isValidCourse(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'pars', 'handicaps']);
+      allow delete: if isAdmin();
+    }
+
+    match /players/{playerId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidPlayer(incoming());
+      allow update: if isAdmin() && isValidPlayer(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name']);
+      allow delete: if isAdmin();
+    }
+
+    match /entries/{entryId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidEntry(incoming())
+        && exists(/databases/$(database)/documents/leagues/$(incoming().leagueId));
+      allow update: if isSignedIn() && isValidEntry(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'playerIds']);
+      allow delete: if isAdmin();
+    }
+
+    match /rounds/{roundId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidRound(incoming())
+        && exists(/databases/$(database)/documents/leagues/$(incoming().leagueId))
+        && exists(/databases/$(database)/documents/courses/$(incoming().courseId));
+      allow update: if isSignedIn() && isValidRound(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['date', 'courseId']);
+      allow delete: if isAdmin();
+    }
+
+    match /scores/{scoreId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidScore(incoming())
+        && exists(/databases/$(database)/documents/rounds/$(incoming().roundId))
+        && exists(/databases/$(database)/documents/players/$(incoming().playerId));
+      allow update: if isSignedIn() && isValidScore(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['holeScores', 'calculatedHandicap']);
+      allow delete: if isAdmin();
+    }
+  }
+}
