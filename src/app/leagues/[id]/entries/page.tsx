@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { collection, onSnapshot, addDoc, deleteDoc, doc, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { Plus, ArrowLeft, Trash2 } from "lucide-react";
+import { Plus, ArrowLeft, Trash2, ArrowUpDown } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { handleFirestoreError, OperationType } from "@/lib/firestoreErrorHandler";
@@ -32,6 +32,8 @@ export default function LeagueEntriesPage() {
   const [p1, setP1] = useState("");
   const [p2, setP2] = useState("");
   const [entryName, setEntryName] = useState("");
+
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // Bulk add state
   const [isBulkAdding, setIsBulkAdding] = useState(false);
@@ -244,8 +246,19 @@ export default function LeagueEntriesPage() {
       )}
 
       {loading ? <p>Loading...</p> : (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 divide-y">
-          {entries.map(e => (
+        <>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm text-gray-500">{entries.length} entr{entries.length !== 1 ? 'ies' : 'y'}</span>
+            <button
+              onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')}
+              className="flex items-center space-x-1.5 text-sm text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg px-3 py-1.5 bg-white hover:bg-gray-50 transition-colors"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              <span>{sortOrder === 'asc' ? 'A–Z' : 'Z–A'}</span>
+            </button>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 divide-y">
+          {[...entries].sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)).map(e => (
             <div key={e.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-gray-50">
               <div>
                 <span className="font-bold text-lg block">{e.name}</span>
@@ -262,6 +275,7 @@ export default function LeagueEntriesPage() {
             <div className="p-8 text-center text-gray-500">No one has been added to this league yet.</div>
           )}
         </div>
+        </>
       )}
     </div>
   );

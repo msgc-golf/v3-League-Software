@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { Trash2, Plus, ArrowLeft, Save } from "lucide-react";
+import { Trash2, Plus, ArrowLeft, Save, ArrowUpDown } from "lucide-react";
 import Link from "next/link";
 import { rankHoles } from "@/lib/handicap";
 import { handleFirestoreError, OperationType } from "@/lib/firestoreErrorHandler";
@@ -18,6 +18,7 @@ interface Course {
 export default function CoursesPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // New Course State
   const [isAdding, setIsAdding] = useState(false);
@@ -148,8 +149,19 @@ export default function CoursesPage() {
       )}
 
       {loading ? <p>Loading...</p> : (
-        <div className="space-y-6">
-          {courses.map(course => {
+        <>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm text-gray-500">{courses.length} course{courses.length !== 1 ? 's' : ''}</span>
+            <button
+              onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')}
+              className="flex items-center space-x-1.5 text-sm text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg px-3 py-1.5 bg-white hover:bg-gray-50 transition-colors"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              <span>{sortOrder === 'asc' ? 'A–Z' : 'Z–A'}</span>
+            </button>
+          </div>
+          <div className="space-y-6">
+          {[...courses].sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)).map(course => {
             const totalPar = course.pars.reduce((a, b) => a + b, 0);
             const rankings = rankHoles(course.handicaps);
             return (
@@ -192,6 +204,7 @@ export default function CoursesPage() {
              </div>
           )}
         </div>
+        </>
       )}
     </div>
   );

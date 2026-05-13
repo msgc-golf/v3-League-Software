@@ -103,8 +103,8 @@ export default function StandingsPage() {
         let teamNet = 0;
         const s1 = eScores[0];
         const s2 = eScores[1];
-        const h1 = calculatePlayingHandicap(s1.calculatedHandicap, 'best_ball');
-        const h2 = calculatePlayingHandicap(s2.calculatedHandicap, 'best_ball');
+        const h1 = calculatePlayingHandicap(Math.min(18, s1.calculatedHandicap), 'best_ball');
+        const h2 = calculatePlayingHandicap(Math.min(18, s2.calculatedHandicap), 'best_ball');
 
         for(let i=0; i<9; i++) {
           let holeNet = 999;
@@ -124,7 +124,7 @@ export default function StandingsPage() {
          let eNet = 0;
          let valid = true;
          eScores.forEach((s: any) => {
-            const h = calculatePlayingHandicap(s.calculatedHandicap, league.format);
+            const h = calculatePlayingHandicap(Math.min(18, s.calculatedHandicap), league.format);
             const gross = s.holeScores.reduce((a:number,b:number)=>a+b, 0);
             if (gross > 0) {
                eNet += (gross - h);

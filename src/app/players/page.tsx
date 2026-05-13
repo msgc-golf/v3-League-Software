@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { collection, onSnapshot, addDoc, deleteDoc, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { Plus, ArrowLeft, Trash2, Upload } from "lucide-react";
+import { Plus, ArrowLeft, Trash2, Upload, ArrowUpDown } from "lucide-react";
 import Link from "next/link";
 import { handleFirestoreError, OperationType } from "@/lib/firestoreErrorHandler";
 
@@ -16,13 +16,14 @@ export default function PlayersPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState("");
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "players"), (snapshot) => {
       const p = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Player));
-      setPlayers(p.sort((a,b) => a.name.localeCompare(b.name)));
+      setPlayers(p);
       setLoading(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, "players");
@@ -143,8 +144,19 @@ export default function PlayersPage() {
       </form>
 
       {loading ? <p>Loading...</p> : (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 divide-y">
-          {players.map(p => (
+        <>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm text-gray-500">{players.length} player{players.length !== 1 ? 's' : ''}</span>
+            <button
+              onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')}
+              className="flex items-center space-x-1.5 text-sm text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg px-3 py-1.5 bg-white hover:bg-gray-50 transition-colors"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              <span>{sortOrder === 'asc' ? 'A–Z' : 'Z–A'}</span>
+            </button>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 divide-y">
+          {[...players].sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)).map(p => (
             <div key={p.id} className="p-4 flex justify-between items-center hover:bg-gray-50">
               <span className="font-medium text-gray-900">{p.name}</span>
               <button onClick={() => handleDelete(p.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-full">
@@ -156,6 +168,7 @@ export default function PlayersPage() {
             <div className="p-8 text-center text-gray-500">No players in roster.</div>
           )}
         </div>
+        </>
       )}
     </div>
   );

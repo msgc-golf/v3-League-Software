@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { collection, onSnapshot, addDoc, deleteDoc, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { Plus, ArrowLeft, Trophy, Trash2, ArrowRight } from "lucide-react";
+import { Plus, ArrowLeft, Trophy, Trash2, ArrowRight, ArrowUpDown } from "lucide-react";
 import Link from "next/link";
 import { handleFirestoreError, OperationType } from "@/lib/firestoreErrorHandler";
 
@@ -16,7 +16,8 @@ export interface League {
 export default function LeaguesPage() {
   const [leagues, setLeagues] = useState<League[]>([]);
   const [loading, setLoading] = useState(true);
-  
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
   const [isAdding, setIsAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [newFormat, setNewFormat] = useState<'stroke_play'|'best_ball'>("stroke_play");
@@ -110,8 +111,19 @@ export default function LeaguesPage() {
       )}
 
       {loading ? <p>Loading...</p> : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {leagues.map(l => (
+        <>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm text-gray-500">{leagues.length} league{leagues.length !== 1 ? 's' : ''}</span>
+            <button
+              onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')}
+              className="flex items-center space-x-1.5 text-sm text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg px-3 py-1.5 bg-white hover:bg-gray-50 transition-colors"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              <span>{sortOrder === 'asc' ? 'A–Z' : 'Z–A'}</span>
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[...leagues].sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)).map(l => (
             <Link key={l.id} href={`/leagues/${l.id}`} className="block bg-white p-6 rounded-xl border border-gray-200 shadow-sm hover:border-gray-400 transition-colors relative group">
               <button 
                 onClick={(e) => handleDelete(e, l.id)} 
@@ -137,6 +149,7 @@ export default function LeaguesPage() {
             </div>
           )}
         </div>
+        </>
       )}
     </div>
   );

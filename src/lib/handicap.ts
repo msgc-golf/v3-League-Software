@@ -30,26 +30,28 @@ export function calculateHandicapDetails(rounds: RoundRecord[]): HandicapDetails
     used: false
   }));
 
+  const cap = (h: number) => Math.min(18, h);
+
   if (withDiffs.length === 1) {
     withDiffs[0].used = true;
-    return { baseHandicap: withDiffs[0].differential, differentials: withDiffs };
+    return { baseHandicap: cap(withDiffs[0].differential), differentials: withDiffs };
   }
 
   if (withDiffs.length === 2) {
     withDiffs[0].used = true;
     withDiffs[1].used = true;
-    return { 
-      baseHandicap: (withDiffs[0].differential + withDiffs[1].differential) / 2, 
-      differentials: withDiffs 
+    return {
+      baseHandicap: cap((withDiffs[0].differential + withDiffs[1].differential) / 2),
+      differentials: withDiffs
     };
   }
 
   // 3 or more rounds: take the most recent 3 rounds
   const recent3 = withDiffs.slice(-3);
-  
+
   // Sort descending by differential to find the highest to drop
   const sortedByDiffDesc = [...recent3].sort((a, b) => b.differential - a.differential);
-  
+
   // Skip the highest (index 0) and mark the rest as used
   for (let i = 1; i < sortedByDiffDesc.length; i++) {
     const item = sortedByDiffDesc[i];
@@ -62,7 +64,7 @@ export function calculateHandicapDetails(rounds: RoundRecord[]): HandicapDetails
   const sum = remaining.reduce((acc, val) => acc + val.differential, 0);
   const baseHdcp = sum / remaining.length;
 
-  return { baseHandicap: baseHdcp, differentials: withDiffs };
+  return { baseHandicap: cap(baseHdcp), differentials: withDiffs };
 }
 
 export function calculateHandicapBase(rounds: RoundRecord[]): number {
