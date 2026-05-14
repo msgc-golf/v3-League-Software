@@ -156,7 +156,7 @@ export default function PlayersPage() {
             </button>
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 divide-y">
-          {[...players].sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)).map(p => (
+          {[...players].sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) : b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: 'base' })).map(p => (
             <div key={p.id} className="p-4 flex justify-between items-center hover:bg-gray-50">
               <span className="font-medium text-gray-900">{p.name}</span>
               <button onClick={() => handleDelete(p.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-full">

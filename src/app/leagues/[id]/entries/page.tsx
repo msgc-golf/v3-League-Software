@@ -127,7 +127,7 @@ export default function LeagueEntriesPage() {
   const availablePlayers = allPlayers
     .filter(p => !playersInLeague.has(p.id))
     .filter(p => p.name.toLowerCase().includes(bulkSearch.toLowerCase()))
-    .sort((a,b) => a.name.localeCompare(b.name));
+    .sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
   const handleDelete = async (id: string) => {
     if(confirm("Remove this entry from the league?")) {
@@ -258,7 +258,7 @@ export default function LeagueEntriesPage() {
             </button>
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 divide-y">
-          {[...entries].sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)).map(e => (
+          {[...entries].sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) : b.name.localeCompare(a.name)).map(e => (
             <div key={e.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-gray-50">
               <div>
                 <span className="font-bold text-lg block">{e.name}</span>

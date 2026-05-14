@@ -123,7 +123,7 @@ export default function LeaguesPage() {
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {[...leagues].sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)).map(l => (
+          {[...leagues].sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) : b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: 'base' })).map(l => (
             <Link key={l.id} href={`/leagues/${l.id}`} className="block bg-white p-6 rounded-xl border border-gray-200 shadow-sm hover:border-gray-400 transition-colors relative group">
               <button 
                 onClick={(e) => handleDelete(e, l.id)} 

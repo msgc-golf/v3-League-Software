@@ -3,10 +3,12 @@
 import { useState, useEffect } from "react";
 import { collection, onSnapshot, addDoc, doc, updateDoc, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Save, Download } from "lucide-react";
+import jsPDF from "jspdf";
+import { autoTable } from "jspdf-autotable";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { getPlayerHandicapForDate, RawScoreDoc } from "@/lib/stats";
+import { getPlayerHandicapForDate, getEffectiveHandicap, RawScoreDoc } from "@/lib/stats";
 import { calculatePlayingHandicap, getStrokesForHole, rankHoles } from "@/lib/handicap";
 import { handleFirestoreError, OperationType } from "@/lib/firestoreErrorHandler";
 
@@ -147,34 +149,144 @@ export default function ScoreEntryPage() {
 
   const courseHoleRankings = rankHoles(course.handicaps);
   const cPar = course.pars.reduce((a:any,b:any)=>a+b,0);
+  const sortedEntries = [...entries].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+  );
+
+  const handleDownloadPdf = () => {
+    const doc = new jsPDF({ orientation: 'landscape' });
+    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${league.name}  —  ${course.name}`, 14, 18);
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100);
+    doc.text(`Round Date: ${round.date}   •   Generated: ${dateStr}`, 14, 26);
+    doc.setTextColor(0);
+
+    let currentY = 34;
+
+    sortedEntries.forEach((entry: any, entryIndex: number) => {
+      if (entryIndex > 0) currentY = (doc as any).lastAutoTable.finalY + 10;
+
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text(entry.name, 14, currentY);
+
+      const isBestBall = league.format === 'best_ball' && entry.playerIds.length === 2;
+
+      const holeHeaders = isTotalMode
+        ? ['Player', 'Hdcp', 'Gross', 'Net']
+        : ['Player', 'Hdcp', ...course.pars.map((p: number, i: number) => `H${i + 1}\n(${p})`), 'Gross', 'Net'];
+
+      const rows: any[] = entry.playerIds.map((pId: string) => {
+        const pName = players.find((p: any) => p.id === pId)?.name || 'Unknown';
+        const baseHdcp = getEffectiveHandicap(pId, round.date, allScores);
+        const playingHdcp = calculatePlayingHandicap(baseHdcp, league.format);
+        const holeScores = scoresInput[entry.id]?.[pId] || Array(9).fill(0);
+
+        let gross = 0;
+        let totalNet = 0;
+
+        holeScores.forEach((sc: number, i: number) => {
+          gross += sc;
+          const strokes = getStrokesForHole(playingHdcp, courseHoleRankings[i]);
+          if (sc > 0) totalNet += sc - strokes;
+        });
+
+        if (isTotalMode && gross > 0) totalNet = gross - playingHdcp;
+
+        const hdcpLabel = `${baseHdcp.toFixed(1)} (${playingHdcp})`;
+
+        if (isTotalMode) {
+          return [pName, hdcpLabel, gross || '—', gross > 0 ? totalNet : '—'];
+        }
+        return [pName, hdcpLabel, ...holeScores.map((sc: number) => sc || '—'), gross || '—', gross > 0 ? totalNet : '—'];
+      });
+
+      // Best ball team net row
+      if (isBestBall) {
+        const p1Scores = scoresInput[entry.id]?.[entry.playerIds[0]] || Array(9).fill(0);
+        const p2Scores = scoresInput[entry.id]?.[entry.playerIds[1]] || Array(9).fill(0);
+        const p1Hdcp = calculatePlayingHandicap(getEffectiveHandicap(entry.playerIds[0], round.date, allScores), 'best_ball');
+        const p2Hdcp = calculatePlayingHandicap(getEffectiveHandicap(entry.playerIds[1], round.date, allScores), 'best_ball');
+
+        let teamNet = 0;
+        for (let i = 0; i < 9; i++) {
+          const g1 = p1Scores[i] || 0;
+          const g2 = p2Scores[i] || 0;
+          if (g1 === 0 && g2 === 0) continue;
+          let best = 999;
+          if (g1 > 0) best = Math.min(best, g1 - getStrokesForHole(p1Hdcp, courseHoleRankings[i]));
+          if (g2 > 0) best = Math.min(best, g2 - getStrokesForHole(p2Hdcp, courseHoleRankings[i]));
+          if (best < 999) teamNet += best;
+        }
+
+        const emptyHoles = isTotalMode ? [] : Array(9).fill('');
+        rows.push(['Team Best Ball Net', '', ...emptyHoles, '', teamNet]);
+      }
+
+      autoTable(doc, {
+        startY: currentY + 4,
+        head: [holeHeaders],
+        body: rows,
+        headStyles: { fillColor: [31, 41, 55], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+        styles: { fontSize: 9, halign: 'center' },
+        columnStyles: { 0: { halign: 'left', cellWidth: 42 }, 1: { cellWidth: 22 } },
+        didParseCell: (data: any) => {
+          if (isBestBall && data.row.index === rows.length - 1 && data.section === 'body') {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = [219, 234, 254];
+          }
+        },
+      });
+
+      currentY = (doc as any).lastAutoTable.finalY + 10;
+    });
+
+    const safeName = `${league.name}_${course.name}_${round.date}`.replace(/[^a-z0-9]/gi, '_');
+    doc.save(`${safeName}_Scores.pdf`);
+  };
 
   return (
     <div className="min-h-screen p-8 max-w-7xl mx-auto">
-      <header className="mb-8 flex items-center space-x-4">
-        <Link href={`/leagues/${leagueId}/rounds`} className="p-2 bg-gray-200 rounded-full hover:bg-gray-300 transition-colors">
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <div>
-          <h1 className="text-3xl font-bold">Enter Scores: {course.name}</h1>
-          <div className="flex items-center space-x-4 mt-1">
-            <p className="text-gray-500">{round.date} • {league.name}</p>
-            {league.format === 'stroke_play' && (
-              <label className="flex items-center space-x-2 text-sm bg-gray-100 px-3 py-1 rounded-full cursor-pointer hover:bg-gray-200 transition-colors">
-                <input 
-                  type="checkbox" 
-                  checked={isTotalMode}
-                  onChange={(e) => setIsTotalMode(e.target.checked)}
-                  className="rounded text-gray-900 border-gray-300" 
-                />
-                <span className="font-medium text-gray-700">Enter Totals Only</span>
-              </label>
-            )}
+      <header className="mb-8 flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <Link href={`/leagues/${leagueId}/rounds`} className="p-2 bg-gray-200 rounded-full hover:bg-gray-300 transition-colors">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div>
+            <h1 className="text-3xl font-bold">Enter Scores: {course.name}</h1>
+            <div className="flex items-center space-x-4 mt-1">
+              <p className="text-gray-500">{round.date} • {league.name}</p>
+              {league.format === 'stroke_play' && (
+                <label className="flex items-center space-x-2 text-sm bg-gray-100 px-3 py-1 rounded-full cursor-pointer hover:bg-gray-200 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={isTotalMode}
+                    onChange={(e) => setIsTotalMode(e.target.checked)}
+                    className="rounded text-gray-900 border-gray-300"
+                  />
+                  <span className="font-medium text-gray-700">Enter Totals Only</span>
+                </label>
+              )}
+            </div>
           </div>
         </div>
+        <button
+          onClick={handleDownloadPdf}
+          className="flex items-center space-x-2 bg-gray-900 text-white px-4 py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors"
+        >
+          <Download className="w-4 h-4" />
+          <span>Download PDF</span>
+        </button>
       </header>
 
       <div className="space-y-8">
-        {entries.map(entry => {
+        {sortedEntries.map(entry => {
           return (
             <div key={entry.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 overflow-x-auto">
               <div className="flex justify-between items-center mb-4">
@@ -202,7 +314,7 @@ export default function ScoreEntryPage() {
                 <tbody className="divide-y">
                   {entry.playerIds.map((pId: string) => {
                     const pName = players.find(p => p.id === pId)?.name || 'Unknown';
-                    const baseHdcp = getPlayerHandicapForDate(pId, round.date, allScores);
+                    const baseHdcp = getEffectiveHandicap(pId, round.date, allScores);
                     const playingHdcp = calculatePlayingHandicap(baseHdcp, league.format);
                     const scores = scoresInput[entry.id]?.[pId] || Array(9).fill(0);
                     
@@ -278,8 +390,8 @@ export default function ScoreEntryPage() {
                            // calculate best ball dynamically from local state inputs
                            const p1Scores = scoresInput[entry.id]?.[entry.playerIds[0]] || Array(9).fill(0);
                            const p2Scores = scoresInput[entry.id]?.[entry.playerIds[1]] || Array(9).fill(0);
-                           const p1Hdcp = calculatePlayingHandicap(getPlayerHandicapForDate(entry.playerIds[0], round.date, allScores), 'best_ball');
-                           const p2Hdcp = calculatePlayingHandicap(getPlayerHandicapForDate(entry.playerIds[1], round.date, allScores), 'best_ball');
+                           const p1Hdcp = calculatePlayingHandicap(getEffectiveHandicap(entry.playerIds[0], round.date, allScores), 'best_ball');
+                           const p2Hdcp = calculatePlayingHandicap(getEffectiveHandicap(entry.playerIds[1], round.date, allScores), 'best_ball');
                            
                            let teamNet = 0;
                            for(let i=0; i<9; i++) {

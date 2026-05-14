@@ -3,12 +3,14 @@
 import { useState, useEffect } from "react";
 import { collection, onSnapshot, query, where, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { ArrowLeft, Trophy } from "lucide-react";
+import { ArrowLeft, Trophy, Download } from "lucide-react";
+import jsPDF from "jspdf";
+import { autoTable } from "jspdf-autotable";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { calculatePoints } from "@/lib/points";
 import { calculatePlayingHandicap, getStrokesForHole, rankHoles } from "@/lib/handicap";
-import { getPlayerHandicapDetailsForDate } from "@/lib/stats";
+import { getPlayerHandicapDetailsForDate, getEffectiveHandicap, RawScoreDoc } from "@/lib/stats";
 import { handleFirestoreError, OperationType } from "@/lib/firestoreErrorHandler";
 
 export default function StandingsPage() {
@@ -103,8 +105,8 @@ export default function StandingsPage() {
         let teamNet = 0;
         const s1 = eScores[0];
         const s2 = eScores[1];
-        const h1 = calculatePlayingHandicap(Math.min(18, s1.calculatedHandicap), 'best_ball');
-        const h2 = calculatePlayingHandicap(Math.min(18, s2.calculatedHandicap), 'best_ball');
+        const h1 = calculatePlayingHandicap(getEffectiveHandicap(s1.playerId, s1.roundDate, scores as RawScoreDoc[]), 'best_ball');
+        const h2 = calculatePlayingHandicap(getEffectiveHandicap(s2.playerId, s2.roundDate, scores as RawScoreDoc[]), 'best_ball');
 
         for(let i=0; i<9; i++) {
           let holeNet = 999;
@@ -124,7 +126,7 @@ export default function StandingsPage() {
          let eNet = 0;
          let valid = true;
          eScores.forEach((s: any) => {
-            const h = calculatePlayingHandicap(Math.min(18, s.calculatedHandicap), league.format);
+            const h = calculatePlayingHandicap(getEffectiveHandicap(s.playerId, s.roundDate, scores as RawScoreDoc[]), league.format);
             const gross = s.holeScores.reduce((a:number,b:number)=>a+b, 0);
             if (gross > 0) {
                eNet += (gross - h);
@@ -146,15 +148,96 @@ export default function StandingsPage() {
     }
   });
 
-  const sortedEntries = [...entries].map(e => ({...e, points: totalPoints[e.id]})).sort((a,b) => b.points - a.points);
+  const naturalName = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  const sortedEntries = [...entries]
+    .map(e => ({...e, points: totalPoints[e.id]}))
+    .sort((a, b) => b.points - a.points || naturalName(a.name, b.name));
+
+  const handleDownloadPdf = () => {
+    const doc = new jsPDF();
+    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    // Header
+    doc.setFontSize(22);
+    doc.setFont('helvetica', 'bold');
+    doc.text(league.name, 14, 20);
+
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100);
+    doc.text(`Standings Report  —  ${dateStr}`, 14, 29);
+    doc.setTextColor(0);
+
+    // Standings table
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Overall Standings', 14, 42);
+
+    autoTable(doc, {
+      startY: 47,
+      head: [['Rank', 'Entry / Team', 'Total Points']],
+      body: sortedEntries.map((e, idx) => [idx + 1, e.name, e.points.toFixed(1)]),
+      headStyles: { fillColor: [31, 41, 55], textColor: 255, fontStyle: 'bold' },
+      columnStyles: { 0: { halign: 'center', cellWidth: 20 }, 2: { halign: 'right', cellWidth: 35 } },
+      styles: { fontSize: 11 },
+    });
+
+    const afterStandings = (doc as any).lastAutoTable.finalY + 14;
+
+    // Handicap report
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Player Handicap Report', 14, afterStandings);
+
+    const allPlayerIds = Array.from(new Set(entries.flatMap((e: any) => e.playerIds)))
+      .sort((a, b) => naturalName(players.find(p => p.id === a)?.name ?? '', players.find(p => p.id === b)?.name ?? ''));
+    const handicapRows = allPlayerIds.flatMap((playerId: any) => {
+      const player = players.find(p => p.id === playerId);
+      if (!player) return [];
+      const hdcpDetails = getPlayerHandicapDetailsForDate(playerId, null, scores);
+      const playingHdcp = calculatePlayingHandicap(hdcpDetails.baseHandicap, league.format);
+      const diffs = [...hdcpDetails.differentials].reverse().slice(0, 3)
+        .map(d => {
+          const shortDate = d.date ? d.date.replace(/^\d{4}-/, '').replace(/^0/, '') : '?';
+          return `${d.used ? '* ' : ''}${d.differential > 0 ? '+' : ''}${d.differential}  ${shortDate}`;
+        })
+        .join('\n');
+      return [[player.name, hdcpDetails.baseHandicap.toFixed(1), String(playingHdcp), diffs || '—']];
+    });
+
+    autoTable(doc, {
+      startY: afterStandings + 5,
+      head: [['Player', 'Base Hdcp', 'Playing Hdcp', 'Recent Differentials (★ = used)']],
+      body: handicapRows,
+      headStyles: { fillColor: [75, 85, 99], textColor: 255, fontStyle: 'bold' },
+      columnStyles: {
+        1: { halign: 'center', cellWidth: 28 },
+        2: { halign: 'center', cellWidth: 30 },
+        3: { fontSize: 7, overflow: 'linebreak', cellWidth: 55 },
+      },
+      styles: { fontSize: 10 },
+    });
+
+    const safeName = league.name.replace(/[^a-z0-9]/gi, '_');
+    doc.save(`${safeName}_Standings.pdf`);
+  };
 
   return (
     <div className="min-h-screen p-8 max-w-5xl mx-auto">
-      <header className="mb-8 flex items-center space-x-4">
-        <Link href={`/leagues/${leagueId}`} className="p-2 bg-gray-200 rounded-full hover:bg-gray-300 transition-colors">
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <h1 className="text-3xl font-bold">Standings</h1>
+      <header className="mb-8 flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <Link href={`/leagues/${leagueId}`} className="p-2 bg-gray-200 rounded-full hover:bg-gray-300 transition-colors">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <h1 className="text-3xl font-bold">Standings</h1>
+        </div>
+        <button
+          onClick={handleDownloadPdf}
+          className="flex items-center space-x-2 bg-gray-900 text-white px-4 py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors"
+        >
+          <Download className="w-4 h-4" />
+          <span>Download PDF</span>
+        </button>
       </header>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-12">
@@ -200,7 +283,9 @@ export default function StandingsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {Array.from(new Set(entries.flatMap(e => e.playerIds))).map(playerId => {
+              {Array.from(new Set(entries.flatMap(e => e.playerIds)))
+                .sort((a, b) => naturalName(players.find(p => p.id === a)?.name ?? '', players.find(p => p.id === b)?.name ?? ''))
+                .map(playerId => {
                 const player = players.find(p => p.id === playerId);
                 if (!player) return null;
                 const hdcpDetails = getPlayerHandicapDetailsForDate(playerId, null, scores);

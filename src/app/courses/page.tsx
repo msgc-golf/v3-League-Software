@@ -161,7 +161,7 @@ export default function CoursesPage() {
             </button>
           </div>
           <div className="space-y-6">
-          {[...courses].sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)).map(course => {
+          {[...courses].sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) : b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: 'base' })).map(course => {
             const totalPar = course.pars.reduce((a, b) => a + b, 0);
             const rankings = rankHoles(course.handicaps);
             return (
