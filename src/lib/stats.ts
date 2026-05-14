@@ -52,9 +52,12 @@ export function getPlayerHandicapForDate(
   return getPlayerHandicapDetailsForDate(playerId, targetDate, allScores).baseHandicap;
 }
 
-// Returns the handicap to use when scoring a player's round, applying retroactive
-// logic for first-round players: if they had no prior rounds, use the average of
-// their first two rounds' differentials once a second round exists.
+// Returns the handicap to use when scoring a player's round.
+//
+// Retroactive rule: a handicap isn't truly "established" until two rounds exist.
+// Both rounds 1 and 2 are scored with the same handicap — the average of their
+// two differentials — rather than R1 getting no strokes and R2 getting only R1's
+// differential. From round 3 onward, normal prior-round calculation applies.
 export function getEffectiveHandicap(
   playerId: string,
   roundDate: string,
@@ -68,24 +71,32 @@ export function getEffectiveHandicap(
     s => new Date(s.roundDate).getTime() < new Date(roundDate).getTime()
   );
 
-  // Not their first round — normal handicap based on prior rounds
-  if (priorScores.length > 0) {
+  // Rounds 1 and 2 (fewer than 2 prior rounds): apply retroactive logic
+  if (priorScores.length < 2) {
+    // Both R1 and R2 have been played — use their average as the established handicap
+    if (playerScores.length >= 2) {
+      const r1 = playerScores[0];
+      const r2 = playerScores[1];
+      const diff1 = r1.holeScores.reduce((a, b) => a + b, 0) - r1.coursePar;
+      const diff2 = r2.holeScores.reduce((a, b) => a + b, 0) - r2.coursePar;
+      return Math.min(18, (diff1 + diff2) / 2);
+    }
+    // Only 1 round has been played in total
+    if (priorScores.length === 0) return 0; // R1 with no R2 yet — no strokes
+    // R2 is being entered but R2 isn't saved yet — use R1 differential
     const rounds: RoundRecord[] = priorScores.map(ps => ({
       score: ps.holeScores.reduce((a, b) => a + b, 0),
       par: ps.coursePar,
       date: ps.roundDate,
     }));
-    return calculateHandicapBase(rounds); // already capped at 18 inside
+    return calculateHandicapBase(rounds);
   }
 
-  // First round: retroact using the 2-round average if a second round exists
-  if (playerScores.length < 2) {
-    return 0; // only one round ever played, nothing to retroact from
-  }
-
-  const r1 = playerScores[0];
-  const r2 = playerScores[1];
-  const diff1 = r1.holeScores.reduce((a, b) => a + b, 0) - r1.coursePar;
-  const diff2 = r2.holeScores.reduce((a, b) => a + b, 0) - r2.coursePar;
-  return Math.min(18, (diff1 + diff2) / 2);
+  // Round 3 onward: normal calculation from all prior rounds
+  const rounds: RoundRecord[] = priorScores.map(ps => ({
+    score: ps.holeScores.reduce((a, b) => a + b, 0),
+    par: ps.coursePar,
+    date: ps.roundDate,
+  }));
+  return calculateHandicapBase(rounds);
 }
