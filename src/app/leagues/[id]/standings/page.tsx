@@ -95,26 +95,26 @@ export default function StandingsPage() {
     const roundScores: Array<{ id: string, netScore: number }> = [];
 
     entries.forEach(entry => {
-      // Find scores for this entry's players in this round
       const eScores = entry.playerIds.map((pId: string) => scores.find(s => s.roundId === round.id && s.playerId === pId));
-      // if not all played or any missing, we skip entry for this round points? Or score defaults to 0?
-      if (eScores.some((s:any) => !s)) return; // missed round
+      const isBestBall = league.format === 'best_ball' && entry.playerIds.length === 2;
 
-      if (league.format === 'best_ball' && entry.playerIds.length === 2) {
-        // Calculate best ball Net
+      // Best ball: at least one player must have played. All other formats: everyone must have played.
+      if (isBestBall ? eScores.every((s: any) => !s) : eScores.some((s: any) => !s)) return;
+
+      if (isBestBall) {
         let teamNet = 0;
-        const s1 = eScores[0];
-        const s2 = eScores[1];
-        const h1 = calculatePlayingHandicap(getEffectiveHandicap(s1.playerId, s1.roundDate, scores as RawScoreDoc[]), 'best_ball');
-        const h2 = calculatePlayingHandicap(getEffectiveHandicap(s2.playerId, s2.roundDate, scores as RawScoreDoc[]), 'best_ball');
+        const s1 = eScores[0] as any;
+        const s2 = eScores[1] as any;
+        const h1 = s1 ? calculatePlayingHandicap(getEffectiveHandicap(s1.playerId, s1.roundDate, scores as RawScoreDoc[]), 'best_ball') : 0;
+        const h2 = s2 ? calculatePlayingHandicap(getEffectiveHandicap(s2.playerId, s2.roundDate, scores as RawScoreDoc[]), 'best_ball') : 0;
 
         for(let i=0; i<9; i++) {
           let holeNet = 999;
-          if (s1.holeScores[i] > 0) {
+          if (s1 && s1.holeScores[i] > 0) {
              const net1 = s1.holeScores[i] - getStrokesForHole(h1, courseRankings[i]);
              if (net1 < holeNet) holeNet = net1;
           }
-          if (s2.holeScores[i] > 0) {
+          if (s2 && s2.holeScores[i] > 0) {
              const net2 = s2.holeScores[i] - getStrokesForHole(h2, courseRankings[i]);
              if (net2 < holeNet) holeNet = net2;
           }
@@ -122,7 +122,7 @@ export default function StandingsPage() {
         }
         roundScores.push({ id: entry.id, netScore: teamNet });
       } else {
-         // individual or team stroke play total
+         // Individual or stroke play team — all players must have valid scores
          let eNet = 0;
          let valid = true;
          eScores.forEach((s: any) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, onSnapshot, addDoc, doc, updateDoc, query, where } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { ArrowLeft, Save, Download } from "lucide-react";
 import jsPDF from "jspdf";
@@ -115,24 +115,32 @@ export default function ScoreEntryPage() {
   };
 
   const handleSaveEntryScores = async (entryId: string, entry: any) => {
-    // For each player, save/update their doc
     for (const pId of entry.playerIds) {
-      const hdcp = getPlayerHandicapForDate(pId, round.date, allScores);
       const holes = scoresInput[entryId]?.[pId] || Array(9).fill(0);
-      
-      const payload = {
-        roundId,
-        leagueId,
-        playerId: pId,
-        roundDate: round.date,
-        courseId: course.id,
-        coursePar: course.pars.reduce((a:any,b:any)=>a+b,0),
-        holeScores: holes,
-        calculatedHandicap: hdcp, // Store it at time of saving for historical tracking
-      };
+      const gross = holes.reduce((a: number, b: number) => a + b, 0);
+      const existingDocId = savedScoreIds[entryId]?.[pId];
 
       try {
-        const existingDocId = savedScoreIds[entryId]?.[pId];
+        if (gross === 0) {
+          // Player didn't play — remove their score doc if one exists
+          if (existingDocId) {
+            await deleteDoc(doc(db, "scores", existingDocId));
+          }
+          continue;
+        }
+
+        const hdcp = getPlayerHandicapForDate(pId, round.date, allScores);
+        const payload = {
+          roundId,
+          leagueId,
+          playerId: pId,
+          roundDate: round.date,
+          courseId: course.id,
+          coursePar: course.pars.reduce((a:any,b:any)=>a+b,0),
+          holeScores: holes,
+          calculatedHandicap: hdcp,
+        };
+
         if (existingDocId) {
           await updateDoc(doc(db, "scores", existingDocId), payload);
         } else {

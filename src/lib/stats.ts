@@ -20,6 +20,7 @@ export function getPlayerHandicapDetailsForDate(
   // Filter scores for this player in this league
   const playerScores = allScores.filter(s => {
     if (s.playerId !== playerId) return false;
+    if (s.holeScores.reduce((a, b) => a + b, 0) === 0) return false; // player didn't play
     if (targetDate) {
       return new Date(s.roundDate).getTime() < new Date(targetDate).getTime();
     }
@@ -60,7 +61,7 @@ export function getEffectiveHandicap(
   allLeagueScores: RawScoreDoc[]
 ): number {
   const playerScores = allLeagueScores
-    .filter(s => s.playerId === playerId)
+    .filter(s => s.playerId === playerId && s.holeScores.reduce((a, b) => a + b, 0) > 0)
     .sort((a, b) => new Date(a.roundDate).getTime() - new Date(b.roundDate).getTime());
 
   const priorScores = playerScores.filter(
