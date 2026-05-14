@@ -85,6 +85,8 @@ export default function StandingsPage() {
   
   // Accumulated points map: EntryID -> Points
   const totalPoints: Record<string, number> = {};
+  // Per-round points: roundId -> entryId -> points
+  const roundPoints: Record<string, Record<string, number>> = {};
   entries.forEach(e => totalPoints[e.id] = 0);
 
   rounds.forEach(round => {
@@ -142,8 +144,11 @@ export default function StandingsPage() {
 
     if (roundScores.length > 0) {
       const pointsMap = calculatePoints(roundScores, entries.length);
+      roundPoints[round.id] = {};
       roundScores.forEach(rs => {
-        totalPoints[rs.id] += (pointsMap.get(rs.id) || 0);
+        const pts = pointsMap.get(rs.id) || 0;
+        totalPoints[rs.id] += pts;
+        roundPoints[round.id][rs.id] = pts;
       });
     }
   });
@@ -182,12 +187,57 @@ export default function StandingsPage() {
       styles: { fontSize: 11 },
     });
 
+    // Points by round table
+    const sortedRounds = [...rounds].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const numRounds = sortedRounds.length;
+
     const afterStandings = (doc as any).lastAutoTable.finalY + 14;
+
+    if (numRounds > 0) {
+      doc.setFontSize(13);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Points by Round', 14, afterStandings);
+
+      const usableWidth = 182;
+      const nameColW = numRounds <= 8 ? 55 : 45;
+      const totalColW = 18;
+      const roundColW = Math.max(8, (usableWidth - nameColW - totalColW) / numRounds);
+      const tblFontSize = numRounds <= 8 ? 9 : numRounds <= 12 ? 8 : 7;
+
+      const roundHeaders = sortedRounds.map((r, i) => {
+        const shortDate = r.date ? r.date.replace(/^\d{4}-/, '').replace(/^0/, '') : '';
+        return `R${i + 1}\n${shortDate}`;
+      });
+
+      const roundColStyles: Record<number, any> = {};
+      for (let i = 1; i <= numRounds; i++) {
+        roundColStyles[i] = { halign: 'center', cellWidth: roundColW };
+      }
+      roundColStyles[numRounds + 1] = { halign: 'right', cellWidth: totalColW, fontStyle: 'bold' };
+
+      autoTable(doc, {
+        startY: afterStandings + 5,
+        head: [['Entry / Team', ...roundHeaders, 'Total']],
+        body: sortedEntries.map(e => [
+          e.name,
+          ...sortedRounds.map(r => {
+            const pts = roundPoints[r.id]?.[e.id];
+            return pts !== undefined ? pts.toFixed(1) : '—';
+          }),
+          e.points.toFixed(1),
+        ]),
+        headStyles: { fillColor: [31, 41, 55], textColor: 255, fontStyle: 'bold', fontSize: tblFontSize },
+        styles: { fontSize: tblFontSize },
+        columnStyles: { 0: { cellWidth: nameColW }, ...roundColStyles },
+      });
+    }
+
+    const afterRoundTable = (doc as any).lastAutoTable?.finalY ?? afterStandings;
 
     // Handicap report
     doc.setFontSize(13);
     doc.setFont('helvetica', 'bold');
-    doc.text('Player Handicap Report', 14, afterStandings);
+    doc.text('Player Handicap Report', 14, afterRoundTable + 14);
 
     const allPlayerIds = Array.from(new Set(entries.flatMap((e: any) => e.playerIds)))
       .sort((a, b) => naturalName(players.find(p => p.id === a)?.name ?? '', players.find(p => p.id === b)?.name ?? ''));
@@ -206,7 +256,7 @@ export default function StandingsPage() {
     });
 
     autoTable(doc, {
-      startY: afterStandings + 5,
+      startY: afterRoundTable + 19,
       head: [['Player', 'Base Hdcp', 'Playing Hdcp', 'Recent Differentials (★ = used)']],
       body: handicapRows,
       headStyles: { fillColor: [75, 85, 99], textColor: 255, fontStyle: 'bold' },
