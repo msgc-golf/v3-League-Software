@@ -107,8 +107,8 @@ export default function StandingsPage() {
         let teamNet = 0;
         const s1 = eScores[0] as any;
         const s2 = eScores[1] as any;
-        const h1 = s1 ? calculatePlayingHandicap(getEffectiveHandicap(s1.playerId, s1.roundDate, scores as RawScoreDoc[]), 'best_ball') : 0;
-        const h2 = s2 ? calculatePlayingHandicap(getEffectiveHandicap(s2.playerId, s2.roundDate, scores as RawScoreDoc[]), 'best_ball') : 0;
+        const h1 = s1 ? calculatePlayingHandicap(s1.isSub ? (s1.subHandicap ?? 0) : getEffectiveHandicap(s1.playerId, s1.roundDate, scores as RawScoreDoc[]), 'best_ball') : 0;
+        const h2 = s2 ? calculatePlayingHandicap(s2.isSub ? (s2.subHandicap ?? 0) : getEffectiveHandicap(s2.playerId, s2.roundDate, scores as RawScoreDoc[]), 'best_ball') : 0;
 
         for(let i=0; i<9; i++) {
           let holeNet = 999;
@@ -128,7 +128,7 @@ export default function StandingsPage() {
          let eNet = 0;
          let valid = true;
          eScores.forEach((s: any) => {
-            const h = calculatePlayingHandicap(getEffectiveHandicap(s.playerId, s.roundDate, scores as RawScoreDoc[]), league.format);
+            const h = calculatePlayingHandicap(s.isSub ? (s.subHandicap ?? 0) : getEffectiveHandicap(s.playerId, s.roundDate, scores as RawScoreDoc[]), league.format);
             const gross = s.holeScores.reduce((a:number,b:number)=>a+b, 0);
             if (gross > 0) {
                eNet += (gross - h);

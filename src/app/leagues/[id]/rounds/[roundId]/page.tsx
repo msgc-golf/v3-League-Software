@@ -30,6 +30,8 @@ export default function ScoreEntryPage() {
   const [savedScoreIds, setSavedScoreIds] = useState<Record<string, Record<string, string>>>({});
   const [loading, setLoading] = useState(true);
   const [isTotalMode, setIsTotalMode] = useState(false);
+  // entryId -> playerId -> sub info
+  const [subState, setSubState] = useState<Record<string, Record<string, { isSub: boolean; subName: string; subHandicap: number }>>>({});
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "rounds", roundId), (d) => {
@@ -72,6 +74,7 @@ export default function ScoreEntryPage() {
       const newInputs: Record<string, Record<string, number[]>> = {};
       const newSavedIds: Record<string, Record<string, string>> = {};
 
+      const newSubState: Record<string, Record<string, { isSub: boolean; subName: string; subHandicap: number }>> = {};
       currentRoundScores.forEach(s => {
         const entry = entries.find((en: any) => en.playerIds.includes(s.playerId));
         if (!entry) return;
@@ -81,13 +84,22 @@ export default function ScoreEntryPage() {
 
         newInputs[entry.id][s.playerId] = s.holeScores;
         newSavedIds[entry.id][s.playerId] = s.id;
+
+        if (s.isSub) {
+          if (!newSubState[entry.id]) newSubState[entry.id] = {};
+          newSubState[entry.id][s.playerId] = { isSub: true, subName: s.subName ?? '', subHandicap: s.subHandicap ?? 0 };
+        }
       });
 
       setScoresInput(prev => {
-        // If we already have user inputs, we might want to merge or only set once
-        // For now, let's just set them if we don't have them yet or if it's the first load
         if (Object.keys(prev).length === 0) {
           return newInputs;
+        }
+        return prev;
+      });
+      setSubState(prev => {
+        if (Object.keys(prev).length === 0 && Object.keys(newSubState).length > 0) {
+          return newSubState;
         }
         return prev;
       });
@@ -104,6 +116,34 @@ export default function ScoreEntryPage() {
       onSnapshot(doc(db, "courses", round.courseId), (d) => setCourse({id: d.id, ...d.data()}), (error) => handleFirestoreError(error, OperationType.GET, "courses"));
     }
   }, [round]);
+
+  const toggleSub = (entryId: string, pId: string) => {
+    setSubState(prev => {
+      const entryMap = { ...(prev[entryId] || {}) };
+      if (entryMap[pId]?.isSub) {
+        delete entryMap[pId];
+      } else {
+        entryMap[pId] = { isSub: true, subName: '', subHandicap: 0 };
+      }
+      return { ...prev, [entryId]: entryMap };
+    });
+  };
+
+  const updateSub = (entryId: string, pId: string, field: 'subName' | 'subHandicap', value: string | number) => {
+    setSubState(prev => ({
+      ...prev,
+      [entryId]: {
+        ...prev[entryId],
+        [pId]: { ...prev[entryId]?.[pId], [field]: value }
+      }
+    }));
+  };
+
+  const getBaseHdcp = (entryId: string, pId: string): number => {
+    const sub = subState[entryId]?.[pId];
+    if (sub?.isSub) return sub.subHandicap ?? 0;
+    return getEffectiveHandicap(pId, round?.date, allScores);
+  };
 
   const handleScoreChange = (entryId: string, playerId: string, holeIndex: number, val: string) => {
     const num = val === "" ? 0 : parseInt(val);
@@ -129,8 +169,9 @@ export default function ScoreEntryPage() {
           continue;
         }
 
-        const hdcp = getPlayerHandicapForDate(pId, round.date, allScores);
-        const payload = {
+        const subInfo = subState[entryId]?.[pId];
+        const hdcp = subInfo?.isSub ? (subInfo.subHandicap ?? 0) : getPlayerHandicapForDate(pId, round.date, allScores);
+        const payload: Record<string, any> = {
           roundId,
           leagueId,
           playerId: pId,
@@ -139,6 +180,9 @@ export default function ScoreEntryPage() {
           coursePar: course.pars.reduce((a:any,b:any)=>a+b,0),
           holeScores: holes,
           calculatedHandicap: hdcp,
+          isSub: subInfo?.isSub ?? false,
+          subName: subInfo?.isSub ? (subInfo.subName ?? '') : '',
+          subHandicap: subInfo?.isSub ? (subInfo.subHandicap ?? 0) : 0,
         };
 
         if (existingDocId) {
@@ -191,8 +235,10 @@ export default function ScoreEntryPage() {
         : ['Player', 'Hdcp', ...course.pars.map((p: number, i: number) => `H${i + 1}\n(${p})`), 'Gross', 'Net'];
 
       const rows: any[] = entry.playerIds.map((pId: string) => {
-        const pName = players.find((p: any) => p.id === pId)?.name || 'Unknown';
-        const baseHdcp = getEffectiveHandicap(pId, round.date, allScores);
+        const realName = players.find((p: any) => p.id === pId)?.name || 'Unknown';
+        const pdfSub = subState[entry.id]?.[pId];
+        const pName = pdfSub?.isSub ? `${pdfSub.subName || 'Sub'} (sub for ${realName})` : realName;
+        const baseHdcp = pdfSub?.isSub ? (pdfSub.subHandicap ?? 0) : getEffectiveHandicap(pId, round.date, allScores);
         const playingHdcp = calculatePlayingHandicap(baseHdcp, league.format);
         const holeScores = scoresInput[entry.id]?.[pId] || Array(9).fill(0);
 
@@ -219,8 +265,8 @@ export default function ScoreEntryPage() {
       if (isBestBall) {
         const p1Scores = scoresInput[entry.id]?.[entry.playerIds[0]] || Array(9).fill(0);
         const p2Scores = scoresInput[entry.id]?.[entry.playerIds[1]] || Array(9).fill(0);
-        const p1Hdcp = calculatePlayingHandicap(getEffectiveHandicap(entry.playerIds[0], round.date, allScores), 'best_ball');
-        const p2Hdcp = calculatePlayingHandicap(getEffectiveHandicap(entry.playerIds[1], round.date, allScores), 'best_ball');
+        const p1Hdcp = calculatePlayingHandicap(getBaseHdcp(entry.id, entry.playerIds[0]), 'best_ball');
+        const p2Hdcp = calculatePlayingHandicap(getBaseHdcp(entry.id, entry.playerIds[1]), 'best_ball');
 
         let teamNet = 0;
         for (let i = 0; i < 9; i++) {
@@ -322,7 +368,8 @@ export default function ScoreEntryPage() {
                 <tbody className="divide-y">
                   {entry.playerIds.map((pId: string) => {
                     const pName = players.find(p => p.id === pId)?.name || 'Unknown';
-                    const baseHdcp = getEffectiveHandicap(pId, round.date, allScores);
+                    const sub = subState[entry.id]?.[pId];
+                    const baseHdcp = getBaseHdcp(entry.id, pId);
                     const playingHdcp = calculatePlayingHandicap(baseHdcp, league.format);
                     const scores = scoresInput[entry.id]?.[pId] || Array(9).fill(0);
                     
@@ -344,10 +391,52 @@ export default function ScoreEntryPage() {
 
                     return (
                       <tr key={pId}>
-                        <td className="p-2 font-medium">{pName}</td>
+                        <td className="p-2 font-medium">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {sub?.isSub ? (
+                              <>
+                                <input
+                                  type="text"
+                                  value={sub.subName}
+                                  onChange={e => updateSub(entry.id, pId, 'subName', e.target.value)}
+                                  placeholder="Sub name"
+                                  className="border border-orange-300 rounded px-2 py-1 text-sm w-28"
+                                />
+                                <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-semibold whitespace-nowrap">sub for {pName}</span>
+                              </>
+                            ) : (
+                              <span>{pName}</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => toggleSub(entry.id, pId)}
+                              className={`text-xs px-2 py-0.5 rounded border whitespace-nowrap transition-colors ${sub?.isSub ? 'border-orange-300 text-orange-600 hover:bg-orange-50' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}`}
+                            >
+                              {sub?.isSub ? '✕ Remove Sub' : 'Sub'}
+                            </button>
+                          </div>
+                        </td>
                         <td className="p-2 text-center text-gray-500">
-                          {baseHdcp.toFixed(1)} <br/>
-                          <span className="text-xs font-bold">({playingHdcp})</span>
+                          {sub?.isSub ? (
+                            <>
+                              <input
+                                type="number"
+                                min="0"
+                                max="18"
+                                step="0.5"
+                                value={sub.subHandicap}
+                                onChange={e => updateSub(entry.id, pId, 'subHandicap', parseFloat(e.target.value) || 0)}
+                                className="w-14 text-center border border-orange-300 rounded p-1 text-sm"
+                              />
+                              <br/>
+                              <span className="text-xs font-bold">({playingHdcp})</span>
+                            </>
+                          ) : (
+                            <>
+                              {baseHdcp.toFixed(1)} <br/>
+                              <span className="text-xs font-bold">({playingHdcp})</span>
+                            </>
+                          )}
                         </td>
                         {!isTotalMode && scores.map((sc: number, i: number) => (
                           <td key={i} className="p-2 text-center">
@@ -398,8 +487,8 @@ export default function ScoreEntryPage() {
                            // calculate best ball dynamically from local state inputs
                            const p1Scores = scoresInput[entry.id]?.[entry.playerIds[0]] || Array(9).fill(0);
                            const p2Scores = scoresInput[entry.id]?.[entry.playerIds[1]] || Array(9).fill(0);
-                           const p1Hdcp = calculatePlayingHandicap(getEffectiveHandicap(entry.playerIds[0], round.date, allScores), 'best_ball');
-                           const p2Hdcp = calculatePlayingHandicap(getEffectiveHandicap(entry.playerIds[1], round.date, allScores), 'best_ball');
+                           const p1Hdcp = calculatePlayingHandicap(getBaseHdcp(entry.id, entry.playerIds[0]), 'best_ball');
+                           const p2Hdcp = calculatePlayingHandicap(getBaseHdcp(entry.id, entry.playerIds[1]), 'best_ball');
                            
                            let teamNet = 0;
                            for(let i=0; i<9; i++) {
