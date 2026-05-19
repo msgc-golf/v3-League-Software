@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { ArrowLeft, Save, Download } from "lucide-react";
+import { ArrowLeft, Save, Download, Printer } from "lucide-react";
 import jsPDF from "jspdf";
 import { autoTable } from "jspdf-autotable";
 import Link from "next/link";
@@ -32,6 +32,9 @@ export default function ScoreEntryPage() {
   const [isTotalMode, setIsTotalMode] = useState(false);
   // entryId -> playerId -> sub info
   const [subState, setSubState] = useState<Record<string, Record<string, { isSub: boolean; subName: string; subHandicap: number }>>>({});
+  const [showScorecards, setShowScorecards] = useState(false);
+  // each group is [entry1Id, entry2Id] — '' means slot empty / solo
+  const [pairings, setPairings] = useState<string[][]>([]);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "rounds", roundId), (d) => {
@@ -205,6 +208,193 @@ export default function ScoreEntryPage() {
     a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
   );
 
+  const autoPair = () => {
+    const ids = sortedEntries.map((e: any) => e.id);
+    const groups: string[][] = [];
+    for (let i = 0; i < ids.length; i += 2) {
+      groups.push(i + 1 < ids.length ? [ids[i], ids[i + 1]] : [ids[i], '']);
+    }
+    setPairings(groups);
+  };
+
+  const addPairing = () => setPairings(prev => [...prev, ['', '']]);
+  const removePairing = (idx: number) => setPairings(prev => prev.filter((_, i) => i !== idx));
+
+  const setSlot = (groupIdx: number, slotIdx: number, entryId: string) => {
+    setPairings(prev => {
+      const next = prev.map(g => [...g] as string[]);
+      if (!next[groupIdx]) next[groupIdx] = ['', ''];
+      next[groupIdx] = [...next[groupIdx]];
+      next[groupIdx][slotIdx] = entryId;
+      return next;
+    });
+  };
+
+  const getAvailableForSlot = (groupIdx: number, slotIdx: number) => {
+    const otherUsed = new Set(
+      pairings.flatMap((g, gi) =>
+        g.filter((id, si) => id !== '' && !(gi === groupIdx && si === slotIdx))
+      )
+    );
+    return sortedEntries.filter((e: any) => !otherUsed.has(e.id));
+  };
+
+  const generateScorecardsPdf = () => {
+    const jsPDFDoc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+
+    const pageW = 279.4;
+    const pageH = 215.9;
+    const sideMargin = 8;
+    const topMargin = 6;
+    const midGap = 5;
+    const cardW = pageW - sideMargin * 2;
+    const cardH = (pageH - topMargin * 2 - midGap) / 2;
+    const cardX = sideMargin;
+    const labelW = 38;
+    const totalW = 20;
+    const holeW = (cardW - labelW - totalW) / 9;
+    const hdrRowH = 6;
+
+    const drawCutLine = (d: any) => {
+      const midY = topMargin + cardH + midGap / 2;
+      d.setLineDashPattern([3, 3], 0);
+      d.setLineWidth(0.25);
+      d.setDrawColor(160, 160, 160);
+      d.line(0, midY, pageW, midY);
+      d.setLineDashPattern([], 0);
+      d.setDrawColor(0);
+    };
+
+    const drawCell = (
+      d: any, cx: number, cy: number, cw: number, ch: number,
+      text: string, bold: boolean, centered: boolean, fontSize: number,
+      bg: [number, number, number] | null
+    ) => {
+      d.setDrawColor(160, 160, 160);
+      d.setLineWidth(0.2);
+      if (bg) {
+        d.setFillColor(bg[0], bg[1], bg[2]);
+        d.rect(cx, cy, cw, ch, 'FD');
+      } else {
+        d.rect(cx, cy, cw, ch);
+      }
+      if (text) {
+        d.setFont('helvetica', bold ? 'bold' : 'normal');
+        d.setFontSize(fontSize);
+        d.setTextColor(0, 0, 0);
+        const textY = cy + ch * 0.65;
+        if (centered) {
+          d.text(text, cx + cw / 2, textY, { align: 'center' });
+        } else {
+          d.text(text, cx + 1.5, textY, { maxWidth: cw - 2 });
+        }
+      }
+    };
+
+    const drawTableRow = (
+      d: any, ry: number, rh: number, label: string,
+      holes: string[], total: string,
+      bold: boolean, bg: [number, number, number] | null
+    ) => {
+      drawCell(d, cardX, ry, labelW, rh, label, bold, false, 7, bg);
+      for (let i = 0; i < 9; i++) {
+        drawCell(d, cardX + labelW + i * holeW, ry, holeW, rh, holes[i] ?? '', false, true, 7, bg);
+      }
+      drawCell(d, cardX + labelW + 9 * holeW, ry, totalW, rh, total, bold, true, 7, bg);
+    };
+
+    const drawScorecard = (d: any, pairing: string[], cardY: number) => {
+      const pEntries = pairing
+        .filter(id => id !== '')
+        .map(id => entries.find((e: any) => e.id === id))
+        .filter(Boolean) as any[];
+      const isBestBall = league.format === 'best_ball';
+      const totalPlayers = pEntries.reduce((sum: number, e: any) => sum + (e.playerIds?.length ?? 0), 0);
+      const teamHeaderH = isBestBall ? 5 : 0;
+      const numTeamHeaders = isBestBall ? pEntries.length : 0;
+      const headerArea = 13;
+      const fixedTableH = hdrRowH * 3 + numTeamHeaders * teamHeaderH;
+      const playerRowH = Math.max(10, Math.min(22, (cardH - headerArea - fixedTableH) / Math.max(1, totalPlayers)));
+
+      // Card outline
+      d.setDrawColor(0);
+      d.setLineWidth(0.5);
+      d.rect(cardX, cardY, cardW, cardH);
+
+      // Header
+      d.setFontSize(9);
+      d.setFont('helvetica', 'bold');
+      d.setTextColor(0, 0, 0);
+      d.text(league.name, cardX + 2, cardY + 5);
+
+      d.setFontSize(7.5);
+      d.setFont('helvetica', 'normal');
+      d.text(`${course.name}  •  ${round.date}`, cardX + 2, cardY + 10);
+
+      if (pEntries.length > 0) {
+        const groupLabel = pEntries.map((e: any) => e.name).join(' vs ');
+        d.setFontSize(7);
+        d.setFont('helvetica', 'italic');
+        d.text(groupLabel, cardX + cardW - 2, cardY + 5, { align: 'right', maxWidth: cardW * 0.55 });
+      }
+
+      const tableY = cardY + headerArea;
+      const parTotal = course.pars.reduce((a: number, b: number) => a + b, 0);
+
+      drawTableRow(d, tableY,              hdrRowH, 'Hole', Array.from({ length: 9 }, (_, i) => String(i + 1)), 'Total', true,  [210, 210, 210]);
+      drawTableRow(d, tableY + hdrRowH,    hdrRowH, 'Par',  course.pars.map(String), String(parTotal),          false, [235, 235, 235]);
+      drawTableRow(d, tableY + hdrRowH * 2,hdrRowH, 'Hdcp', course.handicaps.map(String), '',                   false, [235, 235, 235]);
+
+      let rowY = tableY + hdrRowH * 3;
+
+      pEntries.forEach((entry: any) => {
+        if (isBestBall) {
+          d.setFillColor(45, 45, 45);
+          d.rect(cardX, rowY, cardW, teamHeaderH, 'F');
+          d.setFontSize(7);
+          d.setFont('helvetica', 'bold');
+          d.setTextColor(255, 255, 255);
+          d.text(entry.name, cardX + 2, rowY + teamHeaderH * 0.72);
+          d.setTextColor(0, 0, 0);
+          rowY += teamHeaderH;
+        }
+
+        entry.playerIds.forEach((pId: string) => {
+          const player = players.find((p: any) => p.id === pId);
+          const sub = subState[entry.id]?.[pId];
+          const baseHdcp = sub?.isSub
+            ? (sub.subHandicap ?? 0)
+            : getEffectiveHandicap(pId, round.date, allScores);
+          const playingHdcp = calculatePlayingHandicap(baseHdcp, league.format);
+          const displayName = sub?.isSub
+            ? `${sub.subName || 'Sub'} (sub for ${player?.name || ''})`
+            : (player?.name || 'Unknown');
+          const rowLabel = `${displayName}  (Hdcp: ${playingHdcp})`;
+
+          drawTableRow(d, rowY, playerRowH, rowLabel, Array(9).fill(''), '', false, null);
+          rowY += playerRowH;
+        });
+      });
+    };
+
+    let pageCardCount = 0;
+    drawCutLine(jsPDFDoc);
+
+    pairings.forEach(pairing => {
+      if (pageCardCount === 2) {
+        jsPDFDoc.addPage();
+        drawCutLine(jsPDFDoc);
+        pageCardCount = 0;
+      }
+      const cardY = pageCardCount === 0 ? topMargin : topMargin + cardH + midGap;
+      drawScorecard(jsPDFDoc, pairing, cardY);
+      pageCardCount++;
+    });
+
+    const safeName = `${league.name}_${round.date}`.replace(/[^a-z0-9]/gi, '_');
+    jsPDFDoc.save(`${safeName}_Scorecards.pdf`);
+  };
+
   const handleDownloadPdf = () => {
     const doc = new jsPDF({ orientation: 'landscape' });
     const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -330,14 +520,93 @@ export default function ScoreEntryPage() {
             </div>
           </div>
         </div>
-        <button
-          onClick={handleDownloadPdf}
-          className="flex items-center space-x-2 bg-gray-900 text-white px-4 py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors"
-        >
-          <Download className="w-4 h-4" />
-          <span>Download PDF</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowScorecards(s => !s)}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors border ${showScorecards ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+          >
+            <Printer className="w-4 h-4" />
+            <span>Print Scorecards</span>
+          </button>
+          <button
+            onClick={handleDownloadPdf}
+            className="flex items-center space-x-2 bg-gray-900 text-white px-4 py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            <span>Download PDF</span>
+          </button>
+        </div>
       </header>
+
+      {showScorecards && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-8">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-lg font-bold">Scorecard Pairings</h2>
+            <button onClick={() => setShowScorecards(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+          </div>
+
+          <div className="flex items-center gap-3 mb-5">
+            <button onClick={autoPair} className="bg-gray-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-gray-700">
+              Auto-Pair
+            </button>
+            <button onClick={() => setPairings([])} className="border border-gray-300 text-gray-600 px-3 py-1.5 rounded text-sm hover:bg-gray-50">
+              Clear All
+            </button>
+          </div>
+
+          <div className="space-y-2 mb-5">
+            {pairings.map((group, gIdx) => {
+              const avail0 = getAvailableForSlot(gIdx, 0);
+              const avail1 = getAvailableForSlot(gIdx, 1);
+              const current0 = group[0] || '';
+              const current1 = group[1] || '';
+              return (
+                <div key={gIdx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                  <span className="text-xs font-bold text-gray-400 w-16 shrink-0">Group {gIdx + 1}</span>
+                  <select
+                    value={current0}
+                    onChange={e => setSlot(gIdx, 0, e.target.value)}
+                    className="border border-gray-300 rounded px-2 py-1.5 text-sm flex-1 min-w-0"
+                  >
+                    <option value="">— Select Entry —</option>
+                    {avail0.map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    {current0 && !avail0.find((e: any) => e.id === current0) && (
+                      <option value={current0}>{entries.find((e: any) => e.id === current0)?.name}</option>
+                    )}
+                  </select>
+                  <span className="text-gray-400 text-sm shrink-0">vs</span>
+                  <select
+                    value={current1}
+                    onChange={e => setSlot(gIdx, 1, e.target.value)}
+                    className="border border-gray-300 rounded px-2 py-1.5 text-sm flex-1 min-w-0"
+                  >
+                    <option value="">— Solo (no partner) —</option>
+                    {avail1.map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    {current1 && !avail1.find((e: any) => e.id === current1) && (
+                      <option value={current1}>{entries.find((e: any) => e.id === current1)?.name}</option>
+                    )}
+                  </select>
+                  <button onClick={() => removePairing(gIdx)} className="text-gray-300 hover:text-red-400 shrink-0 text-2xl leading-none px-1">×</button>
+                </div>
+              );
+            })}
+            {pairings.length === 0 && (
+              <p className="text-sm text-gray-400 text-center py-4">No groups yet — click Auto-Pair or Add Group.</p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button onClick={addPairing} className="border border-gray-300 text-gray-600 px-3 py-1.5 rounded text-sm hover:bg-gray-50">
+              + Add Group
+            </button>
+            {pairings.some(g => g.some(id => id !== '')) && (
+              <button onClick={generateScorecardsPdf} className="bg-green-700 text-white px-5 py-1.5 rounded text-sm font-medium hover:bg-green-800">
+                Generate Scorecards PDF
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="space-y-8">
         {sortedEntries.map(entry => {
