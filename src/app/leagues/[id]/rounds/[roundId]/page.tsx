@@ -341,7 +341,7 @@ export default function ScoreEntryPage() {
       const tableY = cardY + headerArea;
       const parTotal = course.pars.reduce((a: number, b: number) => a + b, 0);
 
-      drawTableRow(d, tableY,              hdrRowH, 'Hole', Array.from({ length: 9 }, (_, i) => String(i + 1)), 'Total', true,  [210, 210, 210]);
+      drawTableRow(d, tableY,              hdrRowH, 'Hole', Array.from({ length: 9 }, (_, i) => String((course.startingHole ?? 1) + i)), 'Total', true,  [210, 210, 210]);
       drawTableRow(d, tableY + hdrRowH,    hdrRowH, 'Par',  course.pars.map(String), String(parTotal),          false, [235, 235, 235]);
       drawTableRow(d, tableY + hdrRowH * 2,hdrRowH, 'Hdcp', course.handicaps.map(String), '',                   false, [235, 235, 235]);
 
@@ -422,7 +422,7 @@ export default function ScoreEntryPage() {
 
       const holeHeaders = isTotalMode
         ? ['Player', 'Hdcp', 'Gross', 'Net']
-        : ['Player', 'Hdcp', ...course.pars.map((p: number, i: number) => `H${i + 1}\n(${p})`), 'Gross', 'Net'];
+        : ['Player', 'Hdcp', ...course.pars.map((p: number, i: number) => `H${(course.startingHole ?? 1) + i}\n(${p})`), 'Gross', 'Net'];
 
       const rows: any[] = entry.playerIds.map((pId: string) => {
         const realName = players.find((p: any) => p.id === pId)?.name || 'Unknown';
@@ -626,7 +626,7 @@ export default function ScoreEntryPage() {
                     <th className="p-2 font-medium text-center">Hndcp</th>
                     {!isTotalMode && Array.from({length: 9}).map((_, i) => (
                       <th key={i} className="p-2 font-medium text-center">
-                        <div>H{i+1}</div>
+                        <div>H{(course.startingHole ?? 1) + i}</div>
                         <div className="text-xs font-normal">P:{course.pars[i]} R:{courseHoleRankings[i]}</div>
                       </th>
                     ))}

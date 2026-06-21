@@ -11,6 +11,7 @@ export interface League {
   id: string;
   name: string;
   format: 'best_ball' | 'stroke_play';
+  ringerBoard?: boolean;
 }
 
 export default function LeaguesPage() {

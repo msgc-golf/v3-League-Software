@@ -13,6 +13,7 @@ interface Course {
   name: string;
   pars: number[];
   handicaps: number[];
+  startingHole?: number; // 1 = front nine (default), 10 = back nine
 }
 
 export default function CoursesPage() {
@@ -25,6 +26,7 @@ export default function CoursesPage() {
   const [newName, setNewName] = useState("");
   const [newPars, setNewPars] = useState<number[]>(Array(9).fill(4));
   const [newHandicaps, setNewHandicaps] = useState<number[]>(Array(9).fill(1));
+  const [newIsBackNine, setNewIsBackNine] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "courses"), (snapshot) => {
@@ -43,14 +45,25 @@ export default function CoursesPage() {
       await addDoc(collection(db, "courses"), {
         name: newName,
         pars: newPars,
-        handicaps: newHandicaps
+        handicaps: newHandicaps,
+        startingHole: newIsBackNine ? 10 : 1,
       });
       setIsAdding(false);
       setNewName("");
       setNewPars(Array(9).fill(4));
       setNewHandicaps(Array(9).fill(1));
+      setNewIsBackNine(false);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, "courses");
+    }
+  };
+
+  const handleToggleNine = async (course: Course) => {
+    const next = course.startingHole === 10 ? 1 : 10;
+    try {
+      await updateDoc(doc(db, "courses", course.id), { startingHole: next });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, "courses");
     }
   };
 
@@ -75,22 +88,35 @@ export default function CoursesPage() {
 
       {isAdding ? (
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-8">
-          <h2 className="text-xl font-semibold mb-4">Add New Course 9</h2>
+          <h2 className="text-xl font-semibold mb-4">Add New Course Nine</h2>
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">Course/Nine Name</label>
-            <input 
+            <input
               className="w-full border border-gray-300 rounded px-3 py-2"
-              value={newName} 
+              value={newName}
               onChange={e => setNewName(e.target.value)}
               placeholder="e.g. Front 9, Back 9"
             />
+          </div>
+          <div className="mb-4">
+            <label className="flex items-center gap-3 cursor-pointer w-fit">
+              <div
+                onClick={() => setNewIsBackNine(v => !v)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${newIsBackNine ? 'bg-gray-900' : 'bg-gray-300'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${newIsBackNine ? 'translate-x-5' : ''}`} />
+              </div>
+              <span className="text-sm font-medium text-gray-700">
+                Back Nine — holes numbered 10–18
+              </span>
+            </label>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse mb-4">
               <thead>
                 <tr>
                   <th className="p-2 border-b">Hole</th>
-                  {Array.from({length: 9}).map((_, i) => <th key={i} className="p-2 border-b text-center">{i + 1}</th>)}
+                  {Array.from({length: 9}).map((_, i) => <th key={i} className="p-2 border-b text-center">{(newIsBackNine ? 10 : 1) + i}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -136,7 +162,7 @@ export default function CoursesPage() {
             <button onClick={handleAddCourse} className="bg-gray-900 text-white px-4 py-2 rounded font-medium flex items-center space-x-2 hover:bg-gray-800">
               <Save className="w-4 h-4" /> <span>Save Course</span>
             </button>
-            <button onClick={() => setIsAdding(false)} className="bg-gray-200 text-gray-800 px-4 py-2 rounded font-medium hover:bg-gray-300">
+            <button onClick={() => { setIsAdding(false); setNewIsBackNine(false); }} className="bg-gray-200 text-gray-800 px-4 py-2 rounded font-medium hover:bg-gray-300">
               Cancel
             </button>
           </div>
@@ -169,14 +195,23 @@ export default function CoursesPage() {
                 <button onClick={() => handleDelete(course.id)} className="absolute top-4 right-4 text-red-500 hover:bg-red-50 p-2 rounded-full">
                   <Trash2 className="w-5 h-5" />
                 </button>
-                <h3 className="text-xl font-bold mb-1">{course.name}</h3>
+                <div className="flex items-center gap-3 mb-1">
+                  <h3 className="text-xl font-bold">{course.name}</h3>
+                  <button
+                    onClick={() => handleToggleNine(course)}
+                    title="Click to toggle front/back nine"
+                    className={`text-xs font-semibold px-2 py-0.5 rounded-full border transition-colors ${course.startingHole === 10 ? 'bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}`}
+                  >
+                    {course.startingHole === 10 ? 'Back 9 (10–18)' : 'Front 9 (1–9)'}
+                  </button>
+                </div>
                 <p className="text-sm text-gray-500 mb-4">Total Par: {totalPar}</p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm text-left border-collapse">
                     <thead>
                       <tr>
                         <th className="p-2 border-b bg-gray-50">Hole</th>
-                        {Array.from({length: 9}).map((_, i) => <th key={i} className="p-2 border-b bg-gray-50 text-center">{i + 1}</th>)}
+                        {Array.from({length: 9}).map((_, i) => <th key={i} className="p-2 border-b bg-gray-50 text-center">{(course.startingHole ?? 1) + i}</th>)}
                       </tr>
                     </thead>
                     <tbody>
